@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR ยิงธนูสู้คำกริยา</title>
+    <!-- Google Font: Mitr -->
+    <link href="https://fonts.googleapis.com/css2?family=Mitr:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              mitr: ['Mitr', 'sans-serif'],
+            },
+          }
+        }
+      }
+    </script>
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- MediaPipe Hands & Camera Utils CDNs -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <style>
+        body {
+            font-family: 'Mitr', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        /* Custom smooth transitions */
+        .transition-all-fast {
+            transition: all 0.2s ease-in-out;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white overflow-hidden h-screen w-screen relative font-mitr">
+
+    <!-- Hidden video element for MediaPipe camera feed -->
+    <video id="webcam" class="hidden" playsinline></video>
+
+    <!-- Fullscreen AR Canvas Container -->
+    <div id="canvas-container" class="absolute inset-0 z-0"></div>
+
+    <!-- UI Overlay Grid Division -->
+    <div class="absolute inset-0 z-10 pointer-events-none flex">
+        <!-- Left 1/4 Zone: Falling Words/Fruits Zone -->
+        <div class="w-1/4 h-full border-r border-emerald-500/30 bg-emerald-950/10 relative overflow-hidden pointer-events-auto" id="fruit-zone">
+            <div class="absolute top-4 left-4 bg-black/60 px-3 py-1 rounded-lg text-xs text-emerald-300 border border-emerald-500/30">
+                โซนคำศัพท์ตก (1/4 ซ้าย)
+            </div>
+        </div>
+        <!-- Right 3/4 Zone: Player / Bow Zone -->
+        <div class="w-3/4 h-full relative overflow-hidden pointer-events-auto" id="player-zone">
+            <div class="absolute top-4 right-4 bg-black/60 px-3 py-1 rounded-lg text-xs text-blue-300 border border-blue-500/30">
+                โซนผู้เล่น (ขวา)
+            </div>
+        </div>
+    </div>
+
+    <!-- 2D DOM Fruit Labels Overlay Container -->
+    <div id="fruit-labels-container" class="absolute inset-0 z-20 pointer-events-none overflow-hidden"></div>
+
+    <!-- START SCREEN / WELCOME MODAL -->
+    <div id="start-screen" class="absolute inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="bg-slate-900 border-2 border-emerald-500/50 rounded-3xl p-6 md:p-8 max-w-xl w-full shadow-2xl flex flex-col items-center text-center">
+            <div class="w-16 h-16 bg-emerald-500/20 rounded-2xl flex items-center justify-center text-emerald-400 text-3xl mb-4 border border-emerald-500/40">
+                🏹
+            </div>
+            <h1 class="text-3xl md:text-4xl font-bold text-emerald-400 mb-2">AR ยิงธนูสู้คำกริยา</h1>
+            <p class="text-slate-300 text-sm md:text-base mb-6">
+                เกม AR สุดสนุกฝึกภาษาไทย! ใช้มือซ้ายถือคันธนูและมือขวาดึงสายธนูเพื่อยิงผลไม้ที่เป็น <span class="text-emerald-400 font-bold">“คำกริยา”</span> เท่านั้น ระวังคำนามหลอกและอย่าให้คำกริยาตกพื้น!
+            </p>
+
+            <!-- Rules Box -->
+            <div class="bg-slate-800/80 rounded-2xl p-4 w-full text-left mb-6 text-sm text-slate-300 space-y-2 border border-slate-700">
+                <div class="font-semibold text-emerald-300 mb-1 flex items-center gap-2">
+                    <span>📜</span> กติกาง่ายๆ:
+                </div>
+                <div class="flex items-start gap-2">
+                    <span class="text-emerald-400">•</span>
+                    <span><strong>มือซ้าย:</strong> ควบคุมตำแหน่งคันธนู (ล็อกอยู่ในโซนขวา)</span>
+                </div>
+                <div class="flex items-start gap-2">
+                    <span class="text-emerald-400">•</span>
+                    <span><strong>มือขวา:</strong> <strong>กำมือ</strong>ใกล้คันธนูเพื่อดึงสายธนู, <strong>แบมือ</strong>เพื่อยิงลูกธนู</span>
+                </div>
+                <div class="flex items-start gap-2">
+                    <span class="text-emerald-400">•</span>
+                    <span>ยิงกริยาถูกต้อง <strong class="text-emerald-400">+10 คะแนน</strong> | ยิงคำนามหลอก <strong class="text-rose-400">-5 คะแนน</strong></span>
+                </div>
+            </div>
+
+            <!-- System Check Section -->
+            <div class="w-full bg-slate-800/50 rounded-2xl p-4 mb-6 border border-slate-700/80">
+                <div class="text-sm font-medium text-slate-300 mb-3 text-left">ตรวจสอบระบบก่อนเริ่มเกม:</div>
+                <div class="space-y-2">
+                    <div id="check-camera" class="flex items-center justify-between bg-slate-900/60 px-4 py-2.5 rounded-xl border border-slate-700 text-sm">
+                        <span class="flex items-center gap-2">📷 เปิดกล้อง</span>
+                        <span id="status-camera" class="text-amber-400 flex items-center gap-1.5">
+                            <svg class="animate-spin h-4 w-4 text-amber-400" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            กำลังตรวจสอบ...
+                        </span>
+                    </div>
+                    <div id="check-ai" class="flex items-center justify-between bg-slate-900/60 px-4 py-2.5 rounded-xl border border-slate-700 text-sm">
+                        <span class="flex items-center gap-2">🤖 โหลด AI Track มือ</span>
+                        <span id="status-ai" class="text-amber-400 flex items-center gap-1.5">
+                            <svg class="animate-spin h-4 w-4 text-amber-400" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            กำลังโหลด...
+                        </span>
+                    </div>
+                </div>
+                <div id="error-box" class="hidden mt-3 p-3 bg-rose-950/80 border border-rose-500/50 rounded-xl text-xs text-rose-300 flex flex-col gap-2">
+                    <span id="error-message">ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตการใช้งานกล้อง</span>
+                    <button id="retry-btn" onclick="initSystem()" class="self-start bg-rose-600 hover:bg-rose-500 text-white px-3 py-1 rounded-lg font-medium transition-all-fast">ลองตรวจสอบอีกครั้ง</button>
+                </div>
+            </div>
+
+            <!-- Start Game Button (Initially hidden until ready) -->
+            <button id="start-game-btn" onclick="startGame()" disabled class="w-full py-4 rounded-2xl font-bold text-lg bg-slate-700 text-slate-400 cursor-not-allowed transition-all-fast shadow-lg flex items-center justify-center gap-2">
+                <span>🎮 เริ่มเกม</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- HUD OVERLAY DURING GAMEPLAY -->
+    <div id="game-hud" class="absolute inset-0 z-30 pointer-events-none flex flex-col justify-between p-4 md:p-6 hidden">
+        <!-- Top Bar HUD -->
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <!-- Left Info: Score & Questions -->
+            <div class="flex items-center gap-3 bg-slate-900/80 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-slate-700 shadow-xl pointer-events-auto">
+                <div class="flex items-center gap-1.5 bg-emerald-500/20 px-3 py-1 rounded-xl border border-emerald-500/30">
+                    <span class="text-emerald-400 font-semibold text-sm">คะแนน:</span>
+                    <span id="hud-score" class="text-emerald-300 font-bold text-lg">0</span>
+                </div>
+                <div class="flex items-center gap-1.5 bg-blue-500/20 px-3 py-1 rounded-xl border border-blue-500/30">
+                    <span class="text-blue-400 font-semibold text-sm">ข้อที่:</span>
+                    <span id="hud-question" class="text-blue-300 font-bold text-lg">1/15</span>
+                </div>
+                <div class="flex items-center gap-1.5 bg-amber-500/20 px-3 py-1 rounded-xl border border-amber-500/30">
+                    <span class="text-amber-400 font-semibold text-sm">เวลา:</span>
+                    <span id="hud-timer" class="text-amber-300 font-bold text-lg">60s</span>
+                </div>
+            </div>
+
+            <!-- Hand Status Widget -->
+            <div class="bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-700 shadow-xl pointer-events-auto text-xs flex items-center gap-3">
+                <div class="flex items-center gap-1">
+                    <span class="text-slate-400">มือซ้าย (คันธนู):</span>
+                    <span id="status-left-hand" class="font-bold text-rose-400">ไม่พบ</span>
+                </div>
+                <div class="w-px h-4 bg-slate-700"></div>
+                <div class="flex items-center gap-1">
+                    <span class="text-slate-400">มือขวา (ดึง/ยิง):</span>
+                    <span id="status-right-hand" class="font-bold text-rose-400">ไม่พบ</span>
+                </div>
+            </div>
+
+            <!-- Side Controls Panel -->
+            <div class="flex flex-wrap md:flex-nowrap items-center gap-2 pointer-events-auto">
+                <!-- Toggle Swap Hands -->
+                <button id="btn-swap" onclick="toggleSwapHands()" class="px-3 py-2 rounded-xl text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white shadow-md active:scale-95 transition-all-fast flex items-center gap-1 border border-emerald-400/40">
+                    <span>สลับมือ: เปิด</span>
+                </button>
+                <!-- Toggle Hand Landmarks -->
+                <button id="btn-landmarks" onclick="toggleLandmarks()" class="px-3 py-2 rounded-xl text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white shadow-md active:scale-95 transition-all-fast flex items-center gap-1 border border-emerald-400/40">
+                    <span>จุดมือ: เปิด</span>
+                </button>
+                <!-- Toggle Sound -->
+                <button id="btn-sound" onclick="toggleSound()" class="px-3 py-2 rounded-xl text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white shadow-md active:scale-95 transition-all-fast flex items-center gap-1 border border-emerald-400/40">
+                    <span>เสียง: เปิด</span>
+                </button>
+                <!-- Restart Button -->
+                <button onclick="restartGame()" class="px-3 py-2 rounded-xl text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white shadow-md active:scale-95 transition-all-fast flex items-center gap-1 border border-rose-400/40">
+                    <span>เริ่มใหม่</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Status Notification Message (Placed right under top bar / time) -->
+        <div class="self-center mt-2">
+            <div id="main-notification" class="bg-slate-900/90 backdrop-blur-md px-6 py-2 rounded-2xl border border-emerald-500/40 text-emerald-300 font-semibold text-sm shadow-xl text-center transition-all-fast">
+                เตรียมพร้อม! ใช้มือซ้ายถือคันธนู และมือขวากำเพื่อดึงสายธนู
+            </div>
+        </div>
+
+        <!-- Bottom Spacer -->
+        <div class="h-10"></div>
+    </div>
+
+    <!-- POPUP TEXT CENTER SCREEN (Fades out in ~1 second) -->
+    <div id="center-popup-container" class="absolute inset-0 z-40 pointer-events-none flex items-center justify-center overflow-hidden">
+        <div id="center-popup-text" class="text-4xl md:text-6xl font-extrabold drop-shadow-2xl opacity-0 transition-opacity duration-300 scale-90"></div>
+    </div>
+
+    <!-- GAME OVER / SUMMARY MODAL -->
+    <div id="game-over-screen" class="absolute inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border-2 border-emerald-500/50 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl flex flex-col items-center text-center">
+            <div class="w-16 h-16 bg-emerald-500/20 rounded-2xl flex items-center justify-center text-emerald-400 text-3xl mb-4 border border-emerald-500/40">
+                🏆
+            </div>
+            <h2 class="text-3xl font-bold text-emerald-400 mb-2">สรุปผลคะแนน</h2>
+            <p class="text-slate-300 text-sm mb-6">คุณเล่นครบ 15 ข้อเรียบร้อยแล้ว!</p>
+
+            <div class="w-full bg-slate-800/80 rounded-2xl p-5 mb-6 border border-slate-700 flex flex-col gap-3">
+                <div class="flex justify-between items-center text-base">
+                    <span class="text-slate-300">คะแนนรวมทั้งหมด:</span>
+                    <span id="final-score" class="text-2xl font-bold text-emerald-400">0</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-slate-300">ยิงคำกริยาถูกต้อง:</span>
+                    <span id="final-correct" class="font-bold text-emerald-300">0 / 15</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-slate-300">ยิงโดนคำหลอก:</span>
+                    <span id="final-wrong" class="font-bold text-rose-400">0 ครั้ง</span>
+                </div>
+            </div>
+
+            <button onclick="restartGame()" class="w-full py-4 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg active:scale-95 transition-all-fast flex items-center justify-center gap-2">
+                <span>🔄 เล่นใหม่อีกครั้ง</span>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. CONFIG & WORD DATASETS
+        // ==========================================
+        const VERBS = [
+            "วิ่ง", "กิน", "อ่าน", "เขียน", "นอน", "เดิน", 
+            "กระโดด", "ร้อง", "ว่ายน้ำ", "เต้น", "ยิ้ม", "หัวเราะ"
+        ];
+        const NOUNS = [
+            "ครู", "บ้าน", "โรงเรียน", "แมว", "หนังสือ", "โต๊ะ", 
+            "ดินสอ", "นักเรียน", "ต้นไม้", "รถ", "ปลา", "ข้าว"
+        ];
+
+        // Game State Variables
+        let gameState = 'WELCOME'; // WELCOME, PLAYING, GAMEOVER
+        let score = 0;
+        let currentQuestionIndex = 0;
+        let maxQuestions = 15;
+        let gameTimer = 60;
+        let timerInterval = null;
+
+        // Toggles State
+        let configSwapHands = true; // true = Left hand controls bow, Right controls draw
+        let configShowLandmarks = true;
+        let configSoundEnabled = true;
+
+        // System Check State
+        let cameraReady = false;
+        let aiReady = false;
+
+        // Web Audio API Context
+        let audioCtx = null;
+
+        // Hand tracking raw data & smoothed positions
+        let leftHandPos = { x: 0.7, y: 0.5, detected: false };
+        let rightHandPos = { x: 0.8, y: 0.5, detected: false, gesture: 'OPEN' }; // OPEN, FIST, SEMI
+        let rightHandMissingFrames = 0;
+        const MISSING_THRESHOLD = 15; // ~0.3 seconds at 50fps
+
+        // Bow & Arrow Physics / Charging State
+        let isDrawing = false;
+        let drawPower = 0.0; // 0.0 to 1.0
+        let lastDrawPower = 0.0;
+        let currentArrow = null;
+        let activeProjectiles = []; // Arrows in flight or pinned
+        let currentFruits = []; // Array of 3 fruit meshes for the current question
+
+        // Three.js Core Variables
+        let scene, camera, renderer;
+        let bowMesh, bowStringMesh, arrowOnBowMesh;
+        let leftHandSphere, rightHandSphere;
+        let landmarkSpheres = { left: [], right: [] };
+
+        // ==========================================
+        // 2. WEB AUDIO API SYNTHESIZER
+        // ==========================================
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSound(type) {
+            if (!configSoundEnabled || !audioCtx) return;
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                const now = audioCtx.currentTime;
+
+                switch(type) {
+                    case 'click':
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(600, now);
+                        osc.frequency.exponentialRampToValueAtTime(400, now + 0.08);
+                        gain.gain.setValueAtTime(0.2, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+                        osc.start(now);
+                        osc.stop(now + 0.08);
+                        break;
+                    case 'toggle':
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(400, now);
+                        osc.frequency.exponentialRampToValueAtTime(800, now + 0.1);
+                        gain.gain.setValueAtTime(0.15, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+                        osc.start(now);
+                        osc.stop(now + 0.1);
+                        break;
+                    case 'check_start':
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(300, now);
+                        osc.frequency.linearRampToValueAtTime(500, now + 0.2);
+                        gain.gain.setValueAtTime(0.1, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+                        osc.start(now);
+                        osc.stop(now + 0.2);
+                        break;
+                    case 'ready_ok':
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(523.25, now); // C5
+                        osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+                        gain.gain.setValueAtTime(0.2, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                        osc.start(now);
+                        osc.stop(now + 0.3);
+                        break;
+                    case 'start_draw':
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(150, now);
+                        osc.frequency.linearRampToValueAtTime(300, now + 0.2);
+                        gain.gain.setValueAtTime(0.1, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+                        osc.start(now);
+                        osc.stop(now + 0.2);
+                        break;
+                    case 'release_arrow':
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(800, now);
+                        osc.frequency.exponentialRampToValueAtTime(200, now + 0.15);
+                        gain.gain.setValueAtTime(0.25, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+                        osc.start(now);
+                        osc.stop(now + 0.15);
+                        break;
+                    case 'correct':
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(440, now);
+                        osc.frequency.setValueAtTime(554.37, now + 0.1);
+                        osc.frequency.setValueAtTime(659.25, now + 0.2);
+                        gain.gain.setValueAtTime(0.25, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+                        osc.start(now);
+                        osc.stop(now + 0.4);
+                        break;
+                    case 'wrong':
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(220, now);
+                        osc.frequency.setValueAtTime(180, now + 0.15);
+                        gain.gain.setValueAtTime(0.25, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                        osc.start(now);
+                        osc.stop(now + 0.3);
+                        break;
+                    case 'fall':
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(300, now);
+                        osc.frequency.linearRampToValueAtTime(100, now + 0.3);
+                        gain.gain.setValueAtTime(0.15, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                        osc.start(now);
+                        osc.stop(now + 0.3);
+                        break;
+                    case 'pin':
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(500, now);
+                        osc.frequency.exponentialRampToValueAtTime(100, now + 0.1);
+                        gain.gain.setValueAtTime(0.2, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+                        osc.start(now);
+                        osc.stop(now + 0.1);
+                        break;
+                    case 'gameover':
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(400, now);
+                        osc.frequency.setValueAtTime(350, now + 0.2);
+                        osc.frequency.setValueAtTime(300, now + 0.4);
+                        osc.frequency.setValueAtTime(200, now + 0.6);
+                        gain.gain.setValueAtTime(0.3, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.9);
+                        osc.start(now);
+                        osc.stop(now + 0.9);
+                        break;
+                }
+            } catch(e) {
+                console.error("Audio error:", e);
+            }
+        }
+
+        // ==========================================
+        // 3. THREE.JS SCENE SETUP
+        // ==========================================
+        function initThree() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+
+            // Perspective Camera
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 0, 5);
+
+            // WebGL Renderer with Alpha for AR overlay
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(renderer.domElement);
+
+            // Ambient Light & Directional Light
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            dirLight.position.set(5, 10, 7);
+            scene.add(dirLight);
+
+            // Create 3D Bow & Arrow structure
+            createBowModel();
+
+            // Create Hand Tracking Visual Spheres
+            const sphereGeo = new THREE.SphereGeometry(0.06, 16, 16);
+            const leftMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6 }); // Blue for left
+            const rightMat = new THREE.MeshBasicMaterial({ color: 0x10b981 }); // Green for right
+            leftHandSphere = new THREE.Mesh(sphereGeo, leftMat);
+            rightHandSphere = new THREE.Mesh(sphereGeo, rightMat);
+            leftHandSphere.visible = false;
+            rightHandSphere.visible = false;
+            scene.add(leftHandSphere);
+            scene.add(rightHandSphere);
+
+            // Window resize listener
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function createBowModel() {
+            // Bow Group
+            bowMesh = new THREE.Group();
+
+            // Bow curve (S-shape using TubeGeometry or stacked cylinders)
+            const bowCurveGeo = new THREE.CylinderGeometry(0.02, 0.02, 1.2, 8);
+            const bowMat = new THREE.MeshStandardMaterial({ color: 0x854d0e, roughness: 0.4 }); // Wooden brown
+            
+            // Central handle
+            const handleGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8);
+            const handleMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6 });
+            const handle = new THREE.Mesh(handleGeo, handleMat);
+            bowMesh.add(handle);
+
+            // Upper limb
+            const upperLimb = new THREE.Mesh(bowCurveGeo, bowMat);
+            upperLimb.position.set(0, 0.6, 0);
+            upperLimb.rotation.z = 0.1;
+            bowMesh.add(upperLimb);
+
+            // Lower limb
+            const lowerLimb = new THREE.Mesh(bowCurveGeo, bowMat);
+            lowerLimb.position.set(0, -0.6, 0);
+            lowerLimb.rotation.z = -0.1;
+            bowMesh.add(lowerLimb);
+
+            // Bow String line
+            const stringMat = new THREE.LineBasicMaterial({ color: 0xe2e8f0 });
+            const stringPoints = [
+                new THREE.Vector3(0, 1.15, 0),
+                new THREE.Vector3(0, 0, -0.15),
+                new THREE.Vector3(0, -1.15, 0)
+            ];
+            const stringGeo = new THREE.BufferGeometry().setFromPoints(stringPoints);
+            bowStringMesh = new THREE.Line(stringGeo, stringMat);
+            bowMesh.add(bowStringMesh);
+
+            // Arrow on bow sample preview
+            const arrowGroup = new THREE.Group();
+            const shaftGeo = new THREE.CylinderGeometry(0.01, 0.01, 1.0, 8);
+            shaftGeo.rotateX(Math.PI / 2);
+            const shaftMat = new THREE.MeshStandardMaterial({ color: 0xd97706 });
+            const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+            shaft.position.set(0, 0, 0.3);
+            arrowGroup.add(shaft);
+
+            // Arrow Head
+            const headGeo = new THREE.ConeGeometry(0.025, 0.1, 8);
+            headGeo.rotateX(Math.PI / 2);
+            const headMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.8 });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.set(0, 0, 0.82);
+            arrowGroup.add(head);
+
+            arrowOnBowMesh = arrowGroup;
+            bowMesh.add(arrowOnBowMesh);
+
+            scene.add(bowMesh);
+            bowMesh.visible = false;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // ==========================================
+        // 4. MEDIAPIPE HANDS SETUP & AI TRACKING
+        // ==========================================
+        function initSystem() {
+            initAudio();
+            playSound('click');
+            playSound('check_start');
+
+            document.getElementById('error-box').classList.add('hidden');
+            document.getElementById('status-camera').innerHTML = `
+                <svg class="animate-spin h-4 w-4 text-amber-400" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                กำลังตรวจสอบ...
+            `;
+            document.getElementById('status-ai').innerHTML = `
+                <svg class="animate-spin h-4 w-4 text-amber-400" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                กำลังโหลด...
+            `;
+
+            const videoElement = document.getElementById('webcam');
+
+            // Initialize MediaPipe Hands
+            const hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            hands.setOptions({
+                maxNumHands: 2,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.6,
+                minTrackingConfidence: 0.6
+            });
+
+            hands.onResults(onHandResults);
+
+            // Initialize Camera
+            const cameraUtils = new Camera(videoElement, {
+                onFrame: async () => {
+                    if (videoElement.readyState >= 2) {
+                        await hands.send({ image: videoElement });
+                    }
+                },
+                width: 1280,
+                height: 720
+            });
+
+            cameraUtils.start()
+                .then(() => {
+                    cameraReady = true;
+                    document.getElementById('status-camera').innerHTML = '<span class="text-emerald-400 font-semibold flex items-center gap-1">✓ สำเร็จ</span>';
+                    playSound('ready_ok');
+                    checkReadyStatus();
+                })
+                .catch((err) => {
+                    console.error("Camera access error:", err);
+                    cameraReady = false;
+                    document.getElementById('status-camera').innerHTML = '<span class="text-rose-400 font-semibold">❌ ไม่สำเร็จ</span>';
+                    document.getElementById('error-message').innerText = "ไม่สามารถเปิดกล้องได้ กรุณาตรวจสอบสิทธิ์การใช้งานกล้องในเบราว์เซอร์";
+                    document.getElementById('error-box').classList.remove('hidden');
+                });
+
+            // Simulate AI Track loading check completion
+            setTimeout(() => {
+                aiReady = true;
+                document.getElementById('status-ai').innerHTML = '<span class="text-emerald-400 font-semibold flex items-center gap-1">✓ สำเร็จ</span>';
+                playSound('ready_ok');
+                checkReadyStatus();
+            }, 1500);
+        }
+
+        function checkReadyStatus() {
+            if (cameraReady && aiReady) {
+                const startBtn = document.getElementById('start-game-btn');
+                startBtn.disabled = false;
+                startBtn.className = "w-full py-4 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg active:scale-95 transition-all-fast flex items-center justify-center gap-2 cursor-pointer border border-emerald-400/40";
+                playSound('ready_ok');
+            }
+        }
+
+        function onHandResults(results) {
+            if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+                leftHandPos.detected = false;
+                rightHandPos.detected = false;
+                return;
+            }
+
+            let leftDetected = false;
+            let rightDetected = false;
+
+            for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                const landmarks = results.multiHandLandmarks[i];
+                const handedness = results.multiHandedness[i].label; // "Left" or "Right" from MediaPipe (mirrored)
+
+                // Adjust for mirror view if necessary (MediaPipe Left is user's right in mirrored webcam)
+                let isLeft = handedness === "Left";
+                if (!configSwapHands) {
+                    isLeft = !isLeft;
+                }
+
+                // Calculate average position (normalized 0 to 1)
+                const avgX = landmarks[0].x;
+                const avgY = landmarks[0].y;
+
+                if (isLeft) {
+                    leftHandPos.x = avgX;
+                    leftHandPos.y = avgY;
+                    leftHandPos.detected = true;
+                    leftDetected = true;
+                } else {
+                    rightHandPos.x = avgX;
+                    rightHandPos.y = avgY;
+                    rightHandPos.detected = true;
+                    rightDetected = true;
+
+                    // Gesture detection for right hand (Fist vs Open Hand)
+                    // Compare distance between wrist (0) and fingertips (4, 8, 12, 16, 20)
+                    const wrist = landmarks[0];
+                    let totalDist = 0;
+                    const tips = [4, 8, 12, 16, 20];
+                    tips.forEach(tipIdx => {
+                        const dx = landmarks[tipIdx].x - wrist.x;
+                        const dy = landmarks[tipIdx].y - wrist.y;
+                        totalDist += Math.sqrt(dx*dx + dy*dy);
+                    });
+                    const avgTipDist = totalDist / 5;
+
+                    if (avgTipDist < 0.22) {
+                        rightHandPos.gesture = 'FIST'; // กำมือ
+                    } else if (avgTipDist > 0.32) {
+                        rightHandPos.gesture = 'OPEN'; // แบมือ
+                    } else {
+                        rightHandPos.gesture = 'SEMI'; // กึ่งแบ
+                    }
+                }
+            }
+
+            if (!leftDetected) leftHandPos.detected = false;
+            if (!rightDetected) {
+                rightHandMissingFrames++;
+                if (rightHandMissingFrames > MISSING_THRESHOLD) {
+                    rightHandPos.detected = false;
+                }
+            } else {
+                rightHandMissingFrames = 0;
+            }
+
+            // Update UI Hand Status indicators if playing
+            if (gameState === 'PLAYING') {
+                const lStatusEl = document.getElementById('status-left-hand');
+                const rStatusEl = document.getElementById('status-right-hand');
+
+                if (leftHandPos.detected) {
+                    lStatusEl.innerText = "เจอ";
+                    lStatusEl.className = "font-bold text-emerald-400";
+                } else {
+                    lStatusEl.innerText = "ไม่พบ";
+                    lStatusEl.className = "font-bold text-rose-400";
+                }
+
+                if (rightHandPos.detected) {
+                    let gText = "แบมือ";
+                    if (rightHandPos.gesture === 'FIST') gText = "กำมือ";
+                    else if (rightHandPos.gesture === 'SEMI') gText = "กึ่งแบ";
+                    rStatusEl.innerText = gText;
+                    rStatusEl.className = "font-bold text-emerald-400";
+                } else {
+                    rStatusEl.innerText = "ไม่พบ";
+                    rStatusEl.className = "font-bold text-rose-400";
+                }
+            }
+        }
+
+        // ==========================================
+        // 5. FRUITS & VOCABULARY SYSTEM
+        // ==========================================
+        let questionList = [];
+
+        function generateQuestionSet() {
+            questionList = [];
+            for (let i = 0; i < maxQuestions; i++) {
+                // Pick 1 random verb
+                const correctVerb = VERBS[Math.floor(Math.random() * VERBS.length)];
+                // Pick 2 distinct random nouns
+                let shuffledNouns = [...NOUNS].sort(() => 0.5 - Math.random());
+                const decoy1 = shuffledNouns[0];
+                const decoy2 = shuffledNouns[1];
+
+                const items = [
+                    { word: correctVerb, type: 'VERB' },
+                    { word: decoy1, type: 'NOUN' },
+                    { word: decoy2, type: 'NOUN' }
+                ].sort(() => 0.5 - Math.random()); // Shuffle positions
+
+                questionList.push(items);
+            }
+        }
+
+        function spawnFruitsForCurrentQuestion() {
+            // Clear existing fruits and DOM labels
+            clearFruits();
+
+            if (currentQuestionIndex >= maxQuestions) {
+                endGame();
+                return;
+            }
+
+            const currentItems = questionList[currentQuestionIndex];
+            document.getElementById('hud-question').innerText = `${currentQuestionIndex + 1}/${maxQuestions}`;
+            document.getElementById('main-notification').innerText = `ยิงผลไม้ที่เป็นคำกริยาให้ถูกต้อง!`;
+
+            // 3 fruits falling in left 1/4 zone (Normalized X from -0.8 to -0.3 in Three.js coords)
+            const xPositions = [-0.75, -0.55, -0.35].sort(() => 0.5 - Math.random());
+
+            currentItems.forEach((item, index) => {
+                const xPos = xPositions[index];
+                const yPos = 3.5 + index * 0.4; // Staggered Y heights
+
+                // Create 3D Fruit Mesh (Sphere with gradient color)
+                const geometry = new THREE.SphereGeometry(0.25, 32, 32);
+                // Color depending on whether it's verb or noun (visually identical to prevent cheating, e.g. bright orange/red fruit)
+                const material = new THREE.MeshStandardMaterial({ 
+                    color: index === 0 ? 0xef4444 : (index === 1 ? 0xf59e0b : 0xec4899),
+                    roughness: 0.3,
+                    metalness: 0.1
+                });
+                const fruitMesh = new THREE.Mesh(geometry, material);
+                fruitMesh.position.set(xPos, yPos, 0);
+
+                // Attach metadata
+                fruitMesh.userData = {
+                    word: item.word,
+                    type: item.type, // 'VERB' or 'NOUN'
+                    fallSpeed: 0.012 + Math.random() * 0.005,
+                    isPinned: false,
+                    isDead: false
+                };
+
+                scene.add(fruitMesh);
+                currentFruits.push(fruitMesh);
+
+                // Create 2D DOM Label floating above fruit
+                createFruitLabel(fruitMesh);
+            });
+        }
+
+        function createFruitLabel(fruitMesh) {
+            const labelContainer = document.getElementById('fruit-labels-container');
+            const div = document.createElement('div');
+            div.className = "absolute px-3 py-1 bg-slate-900/90 border border-emerald-500/50 rounded-xl text-emerald-300 font-bold text-sm shadow-xl pointer-events-none transform -translate-x-1/2 -translate-y-1/2 transition-transform duration-75";
+            div.innerText = fruitMesh.userData.word;
+            labelContainer.appendChild(div);
+            fruitMesh.userData.domLabel = div;
+        }
+
+        function updateFruitLabels() {
+            currentFruits.forEach(fruit => {
+                if (fruit.userData.domLabel && !fruit.userData.isDead) {
+                    // Project 3D position to 2D screen coordinates
+                    const vector = fruit.position.clone();
+                    vector.project(camera);
+
+                    const x = (vector.x *  .5 + .5) * window.innerWidth;
+                    const y = (-(vector.y * .5) + .5) * window.innerHeight;
+
+                    fruit.userData.domLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y - 35}px)`;
+                } else if (fruit.userData.domLabel && fruit.userData.isDead) {
+                    fruit.userData.domLabel.style.opacity = '0';
+                }
+            });
+        }
+
+        function clearFruits() {
+            currentFruits.forEach(fruit => {
+                scene.remove(fruit);
+                if (fruit.userData.domLabel) {
+                    fruit.userData.domLabel.remove();
+                }
+            });
+            currentFruits = [];
+        }
+
+        // ==========================================
+        // 6. ARROWS & COMBAT PHYSICS SYSTEM
+        // ==========================================
+        function updateArcheryMechanics(delta) {
+            if (!leftHandPos.detected) {
+                if (bowMesh) bowMesh.visible = false;
+                leftHandSphere.visible = false;
+                rightHandSphere.visible = false;
+                return;
+            }
+
+            // Map left hand position to 3D Viewport in right side of screen (Restricted to right half of screen)
+            // Screen X: 0.5 to 1.0 (Right half) -> Three.js X: 0.2 to 2.0
+            let mappedLeftX = (leftHandPos.x - 0.5) * 4.0;
+            if (mappedLeftX < 0.2) mappedLeftX = 0.2; // Lock to right half boundary
+            if (mappedLeftX > 2.0) mappedLeftX = 2.0;
+
+            const mappedLeftY = -(leftHandPos.y - 0.5) * 3.5;
+
+            bowMesh.position.set(mappedLeftX, mappedLeftY, 0);
+            bowMesh.visible = configShowLandmarks;
+
+            if (configShowLandmarks) {
+                leftHandSphere.position.set(mappedLeftX, mappedLeftY, 0);
+                leftHandSphere.visible = true;
+            } else {
+                leftHandSphere.visible = false;
+            }
+
+            // Right hand tracking for drawing string & shooting
+            if (rightHandPos.detected) {
+                let mappedRightX = (rightHandPos.x - 0.5) * 4.0;
+                let mappedRightY = -(rightHandPos.y - 0.5) * 3.5;
+
+                if (configShowLandmarks) {
+                    rightHandSphere.position.set(mappedRightX, mappedRightY, 0.1);
+                    rightHandSphere.visible = true;
+                } else {
+                    rightHandSphere.visible = false;
+                }
+
+                // Check gesture and distance for drawing bow
+                const dx = mappedRightX - mappedLeftX;
+                const dy = mappedRightY - mappedLeftY;
+                const distanceToBow = Math.sqrt(dx*dx + dy*dy);
+
+                // Draw Trigger: Fist close to bow or pulling backwards (towards right/back)
+                if (rightHandPos.gesture === 'FIST' && distanceToBow < 1.2) {
+                    if (!isDrawing) {
+                        isDrawing = true;
+                        playSound('start_draw');
+                    }
+
+                    // Calculate pull distance (pulling rightwards or backwards)
+                    let pullDist = Math.abs(mappedRightX - mappedLeftX);
+                    if (pullDist < 0.1) pullDist = 0.1; // Dead zone
+                    if (pullDist > 0.8) pullDist = 0.8; // Max pull
+
+                    drawPower = (pullDist - 0.1) / 0.7; // 0.0 to 1.0
+                    lastDrawPower = drawPower;
+
+                    // Show arrow on bow & adjust string stretch
+                    if (arrowOnBowMesh) arrowOnBowMesh.visible = true;
+
+                } else if (isDrawing && (rightHandPos.gesture === 'OPEN' || rightHandPos.gesture === 'SEMI')) {
+                    // RELEASE ARROW
+                    isDrawing = false;
+                    shootArrow(lastDrawPower, mappedLeftX, mappedLeftY);
+                    drawPower = 0.0;
+                    if (arrowOnBowMesh) arrowOnBowMesh.visible = false;
+                } else if (!isDrawing) {
+                    if (arrowOnBowMesh) arrowOnBowMesh.visible = false;
+                }
+            } else {
+                rightHandSphere.visible = false;
+                if (isDrawing) {
+                    // Hand lost while drawing -> auto release or cancel after brief check
+                    isDrawing = false;
+                    if (arrowOnBowMesh) arrowOnBowMesh.visible = false;
+                }
+            }
+        }
+
+        function shootArrow(power, startX, startY) {
+            playSound('release_arrow');
+
+            // Create flying projectile arrow
+            const arrowGroup = new THREE.Group();
+            const shaftGeo = new THREE.CylinderGeometry(0.012, 0.012, 1.2, 8);
+            shaftGeo.rotateX(Math.PI / 2);
+            const shaftMat = new THREE.MeshStandardMaterial({ color: 0xd97706 });
+            const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+            arrowGroup.add(shaft);
+
+            const headGeo = new THREE.ConeGeometry(0.03, 0.12, 8);
+            headGeo.rotateX(Math.PI / 2);
+            const headMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.9 });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.set(0, 0, 0.65);
+            arrowGroup.add(head);
+
+            arrowGroup.position.set(startX, startY, 0);
+
+            // Velocity depends on power (High power = fast & straight, Low power = droopy)
+            const speed = 0.12 + power * 0.15;
+            // Shoot towards left/fruits zone (Negative X direction)
+            const velocity = new THREE.Vector3(-speed, (Math.random() - 0.5) * 0.02, 0);
+
+            arrowGroup.userData = {
+                velocity: velocity,
+                power: power,
+                isPinned: false,
+                pinnedTimer: 0,
+                targetFruit: null
+            };
+
+            scene.add(arrowGroup);
+            activeProjectiles.push(arrowGroup);
+        }
+
+        function updateProjectiles() {
+            for (let i = activeProjectiles.length - 1; i >= 0; i--) {
+                const arrow = activeProjectiles[i];
+
+                if (arrow.userData.isPinned) {
+                    arrow.userData.pinnedTimer += 0.016;
+                    // Fade out after 1 second
+                    if (arrow.userData.pinnedTimer > 1.0) {
+                        scene.remove(arrow);
+                        activeProjectiles.splice(i, 1);
+                    }
+                    continue;
+                }
+
+                // Apply velocity and gravity (if low power, droop more)
+                arrow.position.add(arrow.userData.velocity);
+                arrow.userData.velocity.y -= (0.003 + (1.0 - arrow.userData.power) * 0.003); // Gravity
+
+                // Rotate arrow to face movement direction
+                if (arrow.userData.velocity.lengthSq() > 0.0001) {
+                    const dir = arrow.userData.velocity.clone().normalize();
+                    arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+                }
+
+                // Check collision with falling fruits
+                for (let j = 0; j < currentFruits.length; j++) {
+                    const fruit = currentFruits[j];
+                    if (fruit.userData.isDead) continue;
+
+                    const dist = arrow.position.distanceTo(fruit.position);
+                    if (dist < 0.35) {
+                        // HIT FRUIT!
+                        arrow.userData.isPinned = true;
+                        fruit.userData.isPinned = true;
+                        fruit.userData.isDead = true;
+                        arrow.userData.targetFruit = fruit;
+
+                        playSound('pin');
+                        handleFruitHit(fruit);
+                        break;
+                    }
+                }
+
+                // Check collision with left screen border (X <= -1.8)
+                if (arrow.position.x < -1.8 && !arrow.userData.isPinned) {
+                    arrow.userData.isPinned = true;
+                    playSound('pin');
+                    // If pinned at border without hitting fruit
+                    setTimeout(() => {
+                        if (arrow.parent) scene.remove(arrow);
+                    }, 1000);
+                    activeProjectiles.splice(i, 1);
+                }
+            }
+        }
+
+        // ==========================================
+        // 7. GAMEPLAY RULES & SCORE MANAGEMENT
+        // ==========================================
+        function handleFruitHit(fruit) {
+            const wordType = fruit.userData.type;
+            const word = fruit.userData.word;
+
+            if (wordType === 'VERB') {
+                // Correct Verb hit! +10 score
+                score += 10;
+                playSound('correct');
+                showCenterPopup(`+10 ถูกต้อง (${word})`, 'text-emerald-400');
+                updateHUD();
+
+                // End current question and move to next after short delay
+                setTimeout(() => {
+                    currentQuestionIndex++;
+                    spawnFruitsForCurrentQuestion();
+                }, 1200);
+
+            } else {
+                // Wrong Noun hit! -5 score
+                score = Math.max(0, score - 5);
+                playSound('wrong');
+                showCenterPopup(`-5 คำหลอก! (${word})`, 'text-rose-500');
+                updateHUD();
+
+                // Remove this decoy fruit, but continue question until verb is hit or falls
+                fruit.visible = false;
+                if (fruit.userData.domLabel) fruit.userData.domLabel.style.opacity = '0';
+            }
+        }
+
+        function updateFruitsFalling(delta) {
+            for (let i = currentFruits.length - 1; i >= 0; i--) {
+                const fruit = currentFruits[i];
+                if (fruit.userData.isPinned || fruit.userData.isDead) {
+                    // If pinned to arrow, follow arrow or stay
+                    if (fruit.userData.isPinned && fruit.userData.domLabel) {
+                        const vector = fruit.position.clone();
+                        vector.project(camera);
+                        const x = (vector.x *  .5 + .5) * window.innerWidth;
+                        const y = (-(vector.y * .5) + .5) * window.innerHeight;
+                        fruit.userData.domLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y - 35}px)`;
+                        fruit.userData.domLabel.style.opacity = Math.max(0, parseFloat(fruit.userData.domLabel.style.opacity || 1) - 0.02);
+                    }
+                    continue;
+                }
+
+                // Fall down
+                fruit.position.y -= fruit.userData.fallSpeed;
+
+                // Check if hit bottom border (Y <= -2.5)
+                if (fruit.position.y < -2.5) {
+                    fruit.userData.isDead = true;
+                    if (fruit.userData.domLabel) fruit.userData.domLabel.style.opacity = '0';
+
+                    if (fruit.userData.type === 'VERB') {
+                        // Verb fell to ground! -5 score
+                        score = Math.max(0, score - 5);
+                        playSound('fall');
+                        showCenterPopup(`-5 กริยาตกพื้น!`, 'text-rose-500');
+                        updateHUD();
+
+                        // Advance to next question after verb falls
+                        setTimeout(() => {
+                            currentQuestionIndex++;
+                            spawnFruitsForCurrentQuestion();
+                        }, 800);
+                    }
+                }
+            }
+        }
+
+        function updateHUD() {
+            document.getElementById('hud-score').innerText = score;
+            document.getElementById('hud-question').innerText = `${currentQuestionIndex + 1}/${maxQuestions}`;
+        }
+
+        function showCenterPopup(text, colorClass) {
+            const container = document.getElementById('center-popup-text');
+            container.innerText = text;
+            container.className = `text-3xl md:text-5xl font-extrabold drop-shadow-2xl transition-all duration-300 scale-100 opacity-100 ${colorClass}`;
+
+            setTimeout(() => {
+                container.className = `text-3xl md:text-5xl font-extrabold drop-shadow-2xl transition-all duration-300 scale-90 opacity-0 ${colorClass}`;
+            }, 1000);
+        }
+
+        // ==========================================
+        // 8. GAME LOOP & STATE CONTROLS
+        // ==========================================
+        function startGame() {
+            initAudio();
+            playSound('click');
+
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-hud').classList.remove('hidden');
+
+            gameState = 'PLAYING';
+            score = 0;
+            currentQuestionIndex = 0;
+            gameTimer = 60;
+
+            generateQuestionSet();
+            spawnFruitsForCurrentQuestion();
+
+            // Start Timer interval
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if (gameState === 'PLAYING') {
+                    gameTimer--;
+                    document.getElementById('hud-timer').innerText = `${gameTimer}s`;
+                    if (gameTimer <= 0) {
+                        endGame();
+                    }
+                }
+            }, 1000);
+
+            // Start Animation Loop
+            animate();
+        }
+
+        function animate() {
+            if (gameState !== 'PLAYING') return;
+
+            requestAnimationFrame(animate);
+
+            // Update Archery / Hands
+            updateArcheryMechanics(0.016);
+
+            // Update Fruits Falling
+            updateFruitsFalling(0.016);
+
+            // Update Fruit Labels 2D positions
+            updateFruitLabels();
+
+            // Update Projectiles / Arrows in flight
+            updateProjectiles();
+
+            renderer.render(scene, camera);
+        }
+
+        function endGame() {
+            gameState = 'GAMEOVER';
+            if (timerInterval) clearInterval(timerInterval);
+            playSound('gameover');
+
+            clearFruits();
+
+            // Populate Final Screen stats
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('final-correct').innerText = `${Math.min(currentQuestionIndex, maxQuestions)} / ${maxQuestions}`;
+            document.getElementById('final-wrong').innerText = `${Math.max(0, Math.floor((150 - score) / 5))} ครั้ง`;
+
+            document.getElementById('game-hud').classList.add('hidden');
+            document.getElementById('game-over-screen').classList.remove('hidden');
+        }
+
+        function restartGame() {
+            playSound('click');
+            document.getElementById('game-over-screen').classList.add('hidden');
+            document.getElementById('start-screen').classList.remove('hidden');
+            if (bowMesh) bowMesh.visible = false;
+        }
+
+        // ==========================================
+        // 9. TOGGLE BUTTONS HANDLERS
+        // ==========================================
+        function toggleSwapHands() {
+            initAudio();
+            playSound('toggle');
+            configSwapHands = !configSwapHands;
+            const btn = document.getElementById('btn-swap');
+            if (configSwapHands) {
+                btn.className = "px-3 py-2 rounded-xl text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white shadow-md active:scale-95 transition-all-fast flex items-center gap-1 border border-emerald-400/40";
+                btn.innerHTML = "<span>สลับมือ: เปิด</span>";
+            } else {
+                btn.className = "px-3 py-2 rounded-xl text-xs font-medium bg-slate-700 hover:bg-slate-600 text-white shadow-md active:scale-95 transition-all-fast flex items-center gap-1 border border-slate-600";
+                btn.innerHTML = "<span>สลับมือ: ปิด</span>";
+            }
+        }
+
+        function toggleLandmarks() {
+            initAudio();
+            playSound('toggle');
+            configShowLandmarks = !configShowLandmarks;
+            const btn = document.getElementById('btn-landmarks');
+            if (configShowLandmarks) {
+                btn.className = "px-3 py-2 rounded-xl text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white shadow-md active:scale-95 transition-all-fast flex items-center gap-1 border border-emerald-400/40";
+                btn.innerHTML = "<span>จุดมือ: เปิด</span>";
+            } else {
+                btn.className = "px-3 py-2 rounded-xl text-xs font-medium bg-slate-700 hover:bg-slate-600 text-white shadow-md active:scale-95 transition-all-fast flex items-center gap-1 border border-slate-600";
+                btn.innerHTML = "<span>จุดมือ: ปิด</span>";
+            }
+        }
+
+        function toggleSound() {
+            configSoundEnabled = !configSoundEnabled;
+            playSound('toggle');
+            const btn = document.getElementById('btn-sound');
+            if (configSoundEnabled) {
+                btn.className = "px-3 py-2 rounded-xl text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white shadow-md active:scale-95 transition-all-fast flex items-center gap-1 border border-emerald-400/40";
+                btn.innerHTML = "<span>เสียง: เปิด</span>";
+            } else {
+                btn.className = "px-3 py-2 rounded-xl text-xs font-medium bg-slate-700 hover:bg-slate-600 text-white shadow-md active:scale-95 transition-all-fast flex items-center gap-1 border border-slate-600";
+                btn.innerHTML = "<span>เสียง: ปิด</span>";
+            }
+        }
+
+        // Initialize Three.js on load
+        window.onload = function() {
+            initThree();
+        };
+    </script>
+</body>
+</html>
